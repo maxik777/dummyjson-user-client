@@ -9,7 +9,7 @@ This package intentionally does not depend on Laravel, Symfony, Drupal, WordPres
 This take-home package is not published to Packagist. For review:
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/maxik777/dummyjson-user-client.git
 cd dummyjson-user-client
 composer install
 composer check
@@ -22,7 +22,7 @@ Another Composer project can install it from a VCS repository:
     "repositories": [
         {
             "type": "vcs",
-            "url": "https://github.com/<user>/<repository>"
+            "url": "https://github.com/maxik777/dummyjson-user-client"
         }
     ],
     "require": {

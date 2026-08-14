@@ -26,7 +26,7 @@ Another Composer project can install it from a VCS repository:
         }
     ],
     "require": {
-        "maxrzdev/dummyjson-user-client": "dev-main"
+        "maxrzdev/dummyjson-user-client": "dev-master"
     }
 }
 ```
@@ -51,14 +51,24 @@ $user = $service->getUser(1);
 print_r($user->toArray());
 ```
 
-You can also inject the transport explicitly:
+You can also inject any PSR-18 HTTP client explicitly:
 
 ```php
-use MaxRzDev\DummyJsonUserClient\Http\GuzzleApiTransport;
+use GuzzleHttp\Client;
+use GuzzleHttp\Psr7\HttpFactory;
+use MaxRzDev\DummyJsonUserClient\Http\Psr18ApiTransport;
 use MaxRzDev\DummyJsonUserClient\Service\UserService;
 
-$service = new UserService(new GuzzleApiTransport());
+$httpFactory = new HttpFactory();
+
+$service = new UserService(new Psr18ApiTransport(
+    client: new Client(),
+    requestFactory: $httpFactory,
+    streamFactory: $httpFactory,
+));
 ```
+
+`GuzzleApiTransport` remains available as a convenience wrapper for projects already using Guzzle.
 
 Pagination exposes page/per-page input and converts it to DummyJSON's `limit` and `skip` parameters:
 
@@ -110,7 +120,13 @@ try {
 }
 ```
 
-Package-level API failures extend `UserApiException`:
+Package-level API failures extend `UserApiException` and preserve HTTP context when a response is available:
+
+```php
+$statusCode = $exception->statusCode();
+$apiMessage = $exception->apiMessage();
+$responseBody = $exception->responseBody();
+```
 
 - `UserNotFoundException`
 - `RateLimitException`

@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace MaxRzDev\DummyJsonUserClient\Service;
 
 use GuzzleHttp\Client;
+use GuzzleHttp\Psr7\HttpFactory;
 use MaxRzDev\DummyJsonUserClient\Contract\ApiTransportInterface;
 use MaxRzDev\DummyJsonUserClient\Contract\UserServiceInterface;
 use MaxRzDev\DummyJsonUserClient\DTO\PaginatedUsers;
 use MaxRzDev\DummyJsonUserClient\DTO\User;
 use MaxRzDev\DummyJsonUserClient\Exception\InvalidUserDataException;
 use MaxRzDev\DummyJsonUserClient\Exception\UnexpectedResponseException;
-use MaxRzDev\DummyJsonUserClient\Http\GuzzleApiTransport;
+use MaxRzDev\DummyJsonUserClient\Http\Psr18ApiTransport;
 
 final readonly class UserService implements UserServiceInterface
 {
@@ -22,7 +23,16 @@ final readonly class UserService implements UserServiceInterface
 
     public static function createDefault(): self
     {
-        return new self(new GuzzleApiTransport(new Client()));
+        $httpFactory = new HttpFactory();
+
+        return new self(new Psr18ApiTransport(
+            client: new Client([
+                'connect_timeout' => 2.0,
+                'timeout' => 5.0,
+            ]),
+            requestFactory: $httpFactory,
+            streamFactory: $httpFactory,
+        ));
     }
 
     public function getUser(int $id): User

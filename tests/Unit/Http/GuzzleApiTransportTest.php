@@ -65,12 +65,18 @@ final class GuzzleApiTransportTest extends TestCase
     public function testItTranslatesNotFoundResponses(): void
     {
         $transport = $this->transport([
-            new Response(404, [], '{}'),
+            new Response(404, [], '{"message":"User not found"}'),
         ]);
 
-        $this->expectException(UserNotFoundException::class);
-
-        $transport->get('/users/999');
+        try {
+            $transport->get('/users/999');
+            self::fail('Expected a user not found exception.');
+        } catch (UserNotFoundException $exception) {
+            self::assertSame(404, $exception->statusCode());
+            self::assertSame('{"message":"User not found"}', $exception->responseBody());
+            self::assertSame('User not found', $exception->apiMessage());
+            self::assertStringContainsString('User not found', $exception->getMessage());
+        }
     }
 
     public function testItTranslatesRateLimitResponses(): void
@@ -121,6 +127,60 @@ final class GuzzleApiTransportTest extends TestCase
         self::assertCount(2, $history);
     }
 
+    /**
+     * @throws JsonException
+     */
+    public function testItRetriesNetworkFailuresForGets(): void
+    {
+        $history = [];
+        $delays = [];
+        $transport = $this->transport([
+            new ConnectException('Could not connect.', new Request('GET', 'https://example.test/users/1')),
+            new Response(200, [], json_encode(['ok' => true], JSON_THROW_ON_ERROR)),
+        ], $history, maxRetries: 1, baseRetryDelayMilliseconds: 100, sleep: static function (int $delayMilliseconds) use (&$delays): void {
+            $delays[] = $delayMilliseconds;
+        });
+
+        self::assertSame(['ok' => true], $transport->get('/users/1'));
+        self::assertCount(2, $history);
+        self::assertSame([100], $delays);
+    }
+
+    /**
+     * @throws JsonException
+     */
+    public function testItAppliesExponentialBackoffBetweenTemporaryGetFailures(): void
+    {
+        $delays = [];
+        $transport = $this->transport([
+            new Response(500, [], '{}'),
+            new Response(503, [], '{}'),
+            new Response(200, [], json_encode(['ok' => true], JSON_THROW_ON_ERROR)),
+        ], maxRetries: 2, baseRetryDelayMilliseconds: 125, sleep: static function (int $delayMilliseconds) use (&$delays): void {
+            $delays[] = $delayMilliseconds;
+        });
+
+        self::assertSame(['ok' => true], $transport->get('/users/1'));
+        self::assertSame([125, 250], $delays);
+    }
+
+    /**
+     * @throws JsonException
+     */
+    public function testItUsesRetryAfterHeaderBeforeBackoff(): void
+    {
+        $delays = [];
+        $transport = $this->transport([
+            new Response(429, ['Retry-After' => '2'], '{}'),
+            new Response(200, [], json_encode(['ok' => true], JSON_THROW_ON_ERROR)),
+        ], maxRetries: 1, baseRetryDelayMilliseconds: 100, sleep: static function (int $delayMilliseconds) use (&$delays): void {
+            $delays[] = $delayMilliseconds;
+        });
+
+        self::assertSame(['ok' => true], $transport->get('/users/1'));
+        self::assertSame([2_000], $delays);
+    }
+
     public function testItStopsAfterTheRetryLimit(): void
     {
         $history = [];
@@ -161,6 +221,8 @@ final class GuzzleApiTransportTest extends TestCase
         array $queue,
         array &$history = [],
         int $maxRetries = 2,
+        int $baseRetryDelayMilliseconds = 0,
+        ?\Closure $sleep = null,
     ): GuzzleApiTransport {
         $mock = new MockHandler($queue);
         $stack = HandlerStack::create($mock);
@@ -170,7 +232,8 @@ final class GuzzleApiTransportTest extends TestCase
             client: new Client(['handler' => $stack]),
             baseUrl: 'https://example.test',
             maxRetries: $maxRetries,
-            baseRetryDelayMilliseconds: 0,
+            baseRetryDelayMilliseconds: $baseRetryDelayMilliseconds,
+            sleep: $sleep,
         );
     }
 }
